@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Rialo Runner — Consistent Spawns</title>
+<title>Rialo Runner — Balanced (Logo + Items)</title>
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -14,44 +14,68 @@
     box-shadow:0 16px 40px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.06);
     image-rendering:pixelated; touch-action:manipulation; }
   .hud { display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; }
-  .btn { padding:8px 14px; border-radius:10px; border:0; cursor:pointer; font-weight:700;
-    background:#14ff72; color:#05130a; box-shadow:0 6px 20px rgba(20,255,114,.3); }
+  .btn, .select {
+    padding:8px 12px; border-radius:10px; border:0; font-weight:700; cursor:pointer;
+    background:#14ff72; color:#05130a; box-shadow:0 6px 20px rgba(20,255,114,.3);
+  }
+  .toolbar { display:flex; gap:8px; align-items:center; }
   .hint { font-size:14px; opacity:.8; color:#b8c6d1 }
+  .select { background:#0f2432; color:#cfe8ff; box-shadow:none; border:1px solid #213a4d; font-weight:600; }
+  label { color:#b8c6d1; font-size:14px; }
 </style>
 </head>
 <body>
   <div class="wrap">
-    <canvas id="game" width="720" height="360" aria-label="Rialo Runner — Consistent"></canvas>
+    <canvas id="game" width="720" height="360" aria-label="Rialo Runner — Balanced"></canvas>
     <div class="hud">
+      <div class="toolbar">
+        <label for="difficulty">Độ khó:</label>
+        <select id="difficulty" class="select">
+          <option value="easy">Easy</option>
+          <option value="normal" selected>Normal</option>
+          <option value="hard">Hard</option>
+        </select>
+        <label><input type="checkbox" id="wm" checked /> Watermark</label>
+      </div>
       <button id="restart" class="btn">Restart (R)</button>
-      <span class="hint">Space / ↑ / chạm để nhảy — spawn luôn ổn định (P = Pause)</span>
+      <span class="hint">Space / ↑ / chạm để nhảy — nhặt logo +10 (P = Pause)</span>
     </div>
   </div>
 
 <script>
 (() => {
-/* ===========================================================
-   Spawn ổn định:
-   - Tốc độ spawn = spawns/giây, không phụ thuộc FPS
-   - Bảo hiểm khoảng cách: không bao giờ quá xa mới có vật tiếp theo
-   - Có cụm 2–4 vật, thêm spawn kép theo xác suất
-   =========================================================== */
+/* ===========================
+   Rialo Runner — Balanced
+   - Logo chắc chắn: preload + fallback
+   - Spawn theo thời gian & khoảng cách, chỉ sau khi Start
+   - Độ khó đổi trực tiếp (Easy/Normal/Hard)
+   - Items: logo +10
+   =========================== */
 
-  // ===== Cấu hình nhanh =====
-  const LOGO_SRC = "qbjSWMDP_400x400.jpg"; // ĐỔI theo tên logo của bạn
-  const SHOW_WATERMARK = true;
-  const SPAWN_ONLY_AFTER_START = false; // =false để thấy spawn ngay khi mở game
+  // === ĐỔI TÊN LOGO Ở ĐÂY ===
+  const LOGO_SRC = "qbjSWMDP_400x400.jpg"; // <-- sửa đúng tên/.jpg/.png/.webp của bạn
 
-  // ===== MẬT ĐỘ =====
-  const SPAWNS_PER_SEC_BASE = 2.2;   // số lần spawn/giây lúc đầu (tăng số này để dày hơn)
-  const SPAWNS_PER_SEC_MAX  = 3.8;   // trần spawn/giây khi khó dần
-  const EXTRA_SPAWN_PROB    = 0.35;  // xác suất spawn thêm 1 lần ngay sau lần chính
-  const MAX_OBS_ONSCREEN    = 28;    // trần số vật tối đa đang hiện
-  const CLUSTER_CHANCE      = 0.65;  // % spawn theo cụm
-  const CLUSTER_MAX         = 4;     // số vật tối đa trong 1 cụm
-  const MIN_GAP_PX          = 34;    // khoảng cách tối thiểu trong cụm (px)
-  const EXTRA_GAP_PX        = 34;    // khoảng cách ngẫu nhiên thêm (px)
-  const MAX_DIST_BETWEEN_SPAWNS = 280; // khoảng cách tối đa giữa 2 lần spawn (px) — bảo hiểm
+  // UI toggles
+  const WM_CHECKBOX = document.getElementById('wm');
+  let SHOW_WATERMARK = true;
+  WM_CHECKBOX.addEventListener('change', () => SHOW_WATERMARK = WM_CHECKBOX.checked);
+
+  // Difficulty presets
+  const DIFF = {
+    easy:   { spsBase:1.2, spsMax:2.2, extraProb:0.15, maxOn:14, clusterChance:0.45, clusterMax:3, minGap:44, gapRand:40, maxDist:340 },
+    normal: { spsBase:1.8, spsMax:3.0, extraProb:0.25, maxOn:18, clusterChance:0.60, clusterMax:3, minGap:38, gapRand:36, maxDist:300 },
+    hard:   { spsBase:2.6, spsMax:3.8, extraProb:0.35, maxOn:24, clusterChance:0.75, clusterMax:4, minGap:32, gapRand:30, maxDist:260 },
+  };
+  let CUR = {...DIFF.normal};
+  const difficultySel = document.getElementById('difficulty');
+  difficultySel.addEventListener('change', (e)=>{ setDifficulty(e.target.value); });
+
+  function setDifficulty(level){
+    CUR = {...DIFF[level]};
+    // reset bộ đếm spawn để áp dụng ngay
+    spawnAccumMs = 0;
+    lastSpawnDistPx = 0;
+  }
 
   // ===== Canvas =====
   const canvas = document.getElementById('game');
@@ -67,14 +91,18 @@
 
   const W = 720, H = 360, groundY = H - 64;
 
-  // ===== Assets =====
+  // ===== Assets (Logo) =====
   const logoImg = new Image(); let logoReady = false;
   logoImg.onload = () => logoReady = true;
-  logoImg.onerror = () => console.warn("Không tìm thấy logo:", LOGO_SRC);
+  logoImg.onerror = () => {
+    console.warn("Không tìm thấy logo:", LOGO_SRC, "— dùng fallback.");
+    logoReady = false; // fallback sẽ tự vẽ hình tròn xanh
+  };
+  // cache-busting nhỏ nếu cần: logoImg.src = LOGO_SRC + "?v=" + Date.now();
   logoImg.src = LOGO_SRC;
 
-  // ===== Thế giới =====
-  let speed = 5;                  // px/frame ở 60fps ~ 300px/s
+  // ===== World =====
+  let speed = 5;         // px per frame @60fps ~ 300px/s
   const gravity = 0.7, jumpV = -12;
   let frame = 0;
 
@@ -83,38 +111,20 @@
   }));
   const hills = [{x:0,h:70,v:1.2},{x:W,h:70,v:1.2}];
 
+  // Player (logo tròn)
   const player = { x:90, y:groundY-40, w:40, h:40, vy:0, onGround:true, anim:0 };
 
-  // ===== Obstacle spawn theo thời gian & khoảng cách =====
+  // ===== Spawn theo thời gian + khoảng cách (chỉ sau khi Start) =====
   let obs = [];
-  let spawnAccumMs = 0;                 // tích lũy thời gian (ms)
-  let lastSpawnDistPx = 0;              // quãng đường đã đi từ lần spawn gần nhất (px)
+  let spawnAccumMs = 0;
+  let lastSpawnDistPx = 0;
+
   function currentSpawnsPerSec(){
-    // tăng dần theo điểm (score ~ thời gian)
-    const t = Math.min(1, Math.floor(score)/300); // 0..1
-    return SPAWNS_PER_SEC_BASE + (SPAWNS_PER_SEC_MAX - SPAWNS_PER_SEC_BASE)*t;
+    // tăng nhẹ theo điểm (0..1)
+    const t = Math.min(1, Math.floor(score)/300);
+    return CUR.spsBase + (CUR.spsMax - CUR.spsBase)*t;
   }
-  function trySpawn(dtMs){
-    // nếu bật chỉ sau khi start
-    if (SPAWN_ONLY_AFTER_START && !started) return;
 
-    spawnAccumMs += dtMs;
-    lastSpawnDistPx += speed * (dtMs/16.6667) * 5; // xấp xỉ px đi được (scale nhẹ theo speed)
-
-    const intervalMs = 1000 / currentSpawnsPerSec();
-
-    // bảo đảm bắt kịp nếu khung hình bị chậm (while)
-    while ((spawnAccumMs >= intervalMs || lastSpawnDistPx >= MAX_DIST_BETWEEN_SPAWNS) && obs.length < MAX_OBS_ONSCREEN) {
-      spawnOnceClustered();
-      spawnAccumMs -= intervalMs;
-      lastSpawnDistPx = 0;
-
-      // spawn thêm theo xác suất
-      if (Math.random() < EXTRA_SPAWN_PROB && obs.length < MAX_OBS_ONSCREEN) {
-        spawnOnceClustered();
-      }
-    }
-  }
   function spawnOnceClustered(){
     const startX = W + 20;
     const makeOne = (x) => {
@@ -123,15 +133,39 @@
       else if (t < 0.8)  obs.push({ x, y:groundY-50, w:24, h:50, type:"tall" });
       else               obs.push({ x, y:groundY-20, w:48, h:20, type:"wide" });
     };
-    if (Math.random() < CLUSTER_CHANCE){
-      const n = 2 + Math.floor(Math.random()*(CLUSTER_MAX-1)); // 2..CLUSTER_MAX
+    if (Math.random() < CUR.clusterChance){
+      const n = 2 + Math.floor(Math.random()*(CUR.clusterMax-1)); // 2..clusterMax
       let x = startX;
       for (let i=0;i<n;i++){
         makeOne(x);
-        x += MIN_GAP_PX + Math.random()*EXTRA_GAP_PX;
-        if (obs.length >= MAX_OBS_ONSCREEN) break;
+        x += dynamicMinGapPx() + Math.random()*CUR.gapRand;
+        if (obs.length >= CUR.maxOn) break;
       }
     } else makeOne(startX);
+  }
+
+  // khoảng cách tối thiểu dựa theo tốc độ, để lúc nhanh vẫn có khe nhảy
+  function dynamicMinGapPx(){
+    const base = CUR.minGap;
+    const bonus = Math.max(0, (speed - 5) * 2.5); // tăng gap khi nhanh
+    return base + bonus;
+  }
+
+  function trySpawn(dtMs){
+    if (!started) return; // chỉ spawn sau khi bấm Start → đỡ “dày đặc” lúc vào
+    spawnAccumMs += dtMs;
+    lastSpawnDistPx += speed * (dtMs/16.6667) * 5;
+
+    const intervalMs = 1000 / currentSpawnsPerSec();
+    while ((spawnAccumMs >= intervalMs || lastSpawnDistPx >= CUR.maxDist) && obs.length < CUR.maxOn) {
+      spawnOnceClustered();
+      spawnAccumMs -= intervalMs;
+      lastSpawnDistPx = 0;
+
+      if (Math.random() < CUR.extraProb && obs.length < CUR.maxOn) {
+        spawnOnceClustered();
+      }
+    }
   }
 
   // ===== Items (logo +10) =====
@@ -140,29 +174,29 @@
     const size=26+Math.random()*8, r=size/2;
     const y=(groundY-110)+Math.random()*50;
     items.push({ x:W+30, y, r, ang:Math.random()*Math.PI*2, spin:0.03+Math.random()*0.03, trail:[] });
-    nextItemAt = perfFrame + 180 + Math.floor(Math.random()*120); // theo frame ảo
+    nextItemAt = perfFrame + 180 + Math.floor(Math.random()*120);
   }
 
-  // ===== Hiệu ứng =====
+  // ===== Effects =====
   const particles=[], floats=[];
   function burst(x,y,c="rgba(20,255,114,"){ for(let i=0;i<16;i++){ const a=Math.random()*Math.PI*2, sp=1.5+Math.random()*2.5;
     particles.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:0,maxLife:28,color:c}); } }
   function addFloat(x,y,text="+10"){ floats.push({x,y,text,life:0,maxLife:40}); }
 
-  // ===== Trạng thái =====
+  // ===== State & Input =====
   let running=true, started=false, paused=false;
   let score=0, best=Number(localStorage.getItem('rialo_runner_best')||0), flash=0, logoSpin=0;
 
   function reset(){
     obs=[]; items=[]; particles.length=0; floats.length=0;
     speed=5; frame=0; score=0; flash=0; started=false; paused=false;
-    spawnAccumMs = 0; lastSpawnDistPx = 0; nextItemAt = 100; perfFrame = 0;
+    spawnAccumMs=0; lastSpawnDistPx=0; nextItemAt=100; perfFrame=0;
     Object.assign(player,{x:90,y:groundY-40,w:40,h:40,vy:0,onGround:true,anim:0});
   }
 
-  // ===== Input =====
   function jump(){ if(!running){reset();return;} if(paused) return; started=true;
     if (player.onGround){ player.vy=jumpV; player.onGround=false; } }
+
   addEventListener('keydown', e=>{
     if(["Space","ArrowUp","KeyW"].includes(e.code)){ e.preventDefault(); jump(); }
     if(e.key.toLowerCase()==='r') reset();
@@ -178,9 +212,9 @@
   }
   function dist2(ax,ay,bx,by){ const dx=ax-bx, dy=ay-by; return dx*dx+dy*dy; }
 
-  // ===== Update/Draw =====
+  // ===== Update/Draw (delta time) =====
   let lastTs = performance.now();
-  let perfFrame = 0; // bộ đếm frame logic (không dùng rAF thực)
+  let perfFrame = 0;
   function update(dtMs){
     frame++; perfFrame++;
 
@@ -191,10 +225,8 @@
     // Spawn ổn định
     trySpawn(dtMs);
 
-    // Items định kỳ theo perfFrame
+    // Items: sau khi start ~ 3s sẽ gặp
     if (started && perfFrame >= nextItemAt) spawnItem();
-    // Nếu muốn thấy item ngay cả khi chưa start:
-    if (!started && !SPAWN_ONLY_AFTER_START && perfFrame >= nextItemAt) spawnItem();
 
     // Move obstacles
     for (let i=obs.length-1;i>=0;i--){
@@ -220,11 +252,10 @@
       player.anim += (0.2 + speed*0.02)*(dtMs/16.6667);
     }
 
-    // Score & difficulty (tăng theo thời gian chơi)
+    // Score & difficulty nhẹ
     if (started && running){
       score += 0.1*(dtMs/16.6667);
-      // tăng tốc nhẹ theo điểm
-      if (Math.floor(score) % 50 === 0) speed = Math.min(12, speed + 0.01*(dtMs/16.6667));
+      if (Math.floor(score) % 70 === 0) speed = Math.min(11, speed + 0.01*(dtMs/16.6667));
     }
 
     // Collisions
@@ -301,10 +332,10 @@
     // Title & HUD
     ctx.shadowColor="#14ff72"; ctx.shadowBlur=14; ctx.fillStyle="#14ff72";
     ctx.font="800 28px ui-sans-serif, system-ui"; ctx.fillText("Rialo",20,40); ctx.shadowBlur=0;
-    ctx.fillStyle="#9cc9b0"; ctx.font="12px ui-sans-serif, system-ui"; ctx.fillText("Consistent spawn test",22,58);
+    ctx.fillStyle="#9cc9b0"; ctx.font="12px ui-sans-serif, system-ui"; ctx.fillText("Balanced spawn",22,58);
 
     const s=Math.floor(score); ctx.fillStyle="#cfe8ff"; ctx.font="bold 20px ui-sans-serif, system-ui";
-    const text=`Score: ${s}   Best: ${best}   obs:${obs.length}`;
+    const text=`Score: ${s}   Best: ${best}`;
     const m=ctx.measureText(text); ctx.fillText(text, W - m.width - 80, 40);
 
     // Watermark
@@ -333,13 +364,18 @@
   }
 
   function loop(ts){
-    const dt = Math.min(100, ts - lastTs); // clamp dt để tránh giật
+    const dt = Math.min(100, ts - lastTs);
     lastTs = ts;
     if (running && !paused) update(dt);
     draw();
     requestAnimationFrame(loop);
   }
   requestAnimationFrame((ts)=>{ lastTs=ts; loop(ts); });
+
+  // init
+  setDifficulty('normal');
+  SHOW_WATERMARK = true;
+  WM_CHECKBOX.checked = true;
 
 })();
 </script>
