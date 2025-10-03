@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Rialo Runner — Logo Token</title>
+<title>Rialo Runner</title>
 <style>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
@@ -30,21 +30,16 @@
 </head>
 <body>
   <div class="wrap">
-    <canvas id="game" width="720" height="360" aria-label="Rialo Runner — Logo Token"></canvas>
+    <canvas id="game" width="720" height="360" aria-label="Rialo Runner"></canvas>
     <div class="hud">
       <button id="restart" class="btn">Restart (R)</button>
-      <span class="hint">Space / ↑ / chạm để nhảy — né chướng ngại, ghi điểm!</span>
+      <span class="hint">Nhấn <b>Space</b> / <b>↑</b> / <b>chạm</b> để nhảy — Né chướng ngại, ghi điểm!</span>
     </div>
   </div>
 
 <script>
 (() => {
-  // ====== Cấu hình nhanh ======
-  // ĐỔI tên file logo cho khớp với ảnh bạn đang dùng (jpg/png/webp đều được):
-  const LOGO_SRC = "qbjSWMDP_400x400.jpg"; // ví dụ: "rialo-logo.jpg" hoặc "rialo-logo.png"
-  const SHOW_WATERMARK = false;            // hiện watermark logo góc phải (có thể tắt/bật)
-
-  // ====== Canvas setup (Retina crisp) ======
+  // ===== Canvas setup (Retina crisp) =====
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   function fitCanvas() {
@@ -59,14 +54,14 @@
 
   const W = 720, H = 360;
 
-  // ====== Assets: Logo ======
+  // ===== Assets: Logo (optional file 'rialo-logo.png') =====
   const logoImg = new Image();
   let logoReady = false;
   logoImg.onload = () => logoReady = true;
-  logoImg.onerror = () => console.warn("Không tìm thấy file logo:", LOGO_SRC);
-  logoImg.src = LOGO_SRC; // -> Đặt file ảnh logo cùng thư mục với file .html
+  logoImg.onerror = () => console.warn("Không tìm thấy rialo-logo.png — dùng placeholder.");
+  logoImg.src = "rialo-logo.png"; // Đặt ảnh logo bên cạnh file HTML
 
-  // ====== World constants ======
+  // ===== World constants =====
   const groundY = H - 64;
   let speed = 5;            // tốc độ chạy nền/obstacle
   let spawnEvery = 80;      // khung hình giữa các vật cản
@@ -81,16 +76,18 @@
     { x:W, h: 70, v: 1.2 },
   ];
 
-  // ====== Player = Logo Token (tròn xoay) ======
+  // ===== Player (hộp vuông) =====
   const player = {
-    x: 90, y: groundY - 40, w: 40, h: 40,
+    x: 90, y: groundY - 36, w: 36, h: 36,
     vy: 0, onGround: true, anim: 0
   };
   const gravity = 0.7;
   const jumpV = -12;
 
-  // ====== Obstacles ======
+  // ===== Obstacles =====
+  /** obstacle types: cactus (block), tall (double), wide (low) */
   let obs = [];
+
   function spawnObstacle() {
     const t = Math.random();
     if (t < 0.5) {             // cactus block
@@ -102,13 +99,13 @@
     }
   }
 
-  // ====== Game state ======
+  // ===== Game state =====
   let running = true, started = false;
   let score = 0, best = Number(localStorage.getItem('rialo_runner_best') || 0);
   let flash = 0; // hit flash timer
-  let logoSpin = 0; // quay logo
+  let logoSpin = 0; // quay logo watermark
 
-  // ====== Input ======
+  // ===== Input =====
   function jump() {
     if (!running) { reset(); return; }
     started = true;
@@ -127,16 +124,16 @@
   function reset() {
     obs = [];
     speed = 5; spawnEvery = 80; frame = 0;
-    player.x = 90; player.y = groundY - player.h; player.vy = 0; player.onGround = true; player.anim = 0;
+    player.x = 90; player.y = groundY - 36; player.vy = 0; player.onGround = true; player.anim = 0;
     score = 0; running = true; started = false; flash = 0;
   }
 
-  // ====== Utils ======
+  // ===== Utils =====
   function overlap(ax, ay, aw, ah, bx, by, bw, bh) {
     return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
   }
 
-  // ====== Update ======
+  // ===== Update =====
   function update() {
     frame++;
 
@@ -181,17 +178,8 @@
     }
 
     // Collisions
-    // Dùng hitbox tròn mềm cho logo (cho cảm giác công bằng hơn)
-    const cx = player.x + player.w/2;
-    const cy = player.y + player.h/2;
-    const r  = Math.min(player.w, player.h)/2 - 3; // trừ viền 3px
     for (const o of obs) {
-      // Approx rectangle-circle collision:
-      const nearestX = Math.max(o.x, Math.min(cx, o.x + o.w));
-      const nearestY = Math.max(o.y, Math.min(cy, o.y + o.h));
-      const dx = cx - nearestX;
-      const dy = cy - nearestY;
-      if ((dx*dx + dy*dy) < (r*r)) {
+      if (overlap(player.x+4, player.y+4, player.w-8, player.h-8, o.x, o.y, o.w, o.h)) {
         running = false; best = Math.max(best, Math.floor(score));
         localStorage.setItem('rialo_runner_best', best);
         flash = 14;
@@ -203,7 +191,7 @@
     logoSpin += 0.01 + speed*0.002;
   }
 
-  // ====== Draw helpers ======
+  // ===== Draw helpers =====
   function drawGround() {
     // Stars
     ctx.globalAlpha = 0.9;
@@ -236,69 +224,71 @@
 
   function drawObstacle(o) {
     ctx.save();
+    // Glow
     ctx.shadowColor = "#14ff72"; ctx.shadowBlur = 8;
     ctx.fillStyle = "#14ff72";
     ctx.fillRect(o.x, o.y, o.w, o.h);
+    // Accent top
     ctx.shadowBlur = 0;
     ctx.fillStyle = "rgba(255,255,255,.15)";
     ctx.fillRect(o.x, o.y, o.w, 4);
     ctx.restore();
   }
 
-  // ====== PLAYER: Logo tròn xoay (Cách B) ======
   function drawPlayer() {
-    const { x, y, w, h } = player;
-    const cx = x + w/2, cy = y + h/2;
-    const r = Math.min(w, h)/2;
+    const t = Math.sin(player.anim)*2;
+    ctx.save();
+    // Body
+    ctx.shadowColor = "#00e05a"; ctx.shadowBlur = 10;
+    ctx.fillStyle = "#0ff078";
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+    ctx.shadowBlur = 0;
 
-    // Bóng dưới
-    ctx.fillStyle = "rgba(0,0,0,.25)";
-    ctx.beginPath(); ctx.ellipse(cx+4, cy+6, r*1.0, r*0.5, 0, 0, Math.PI*2); ctx.fill();
+    // "chân" kiểu chạy — 2 hình chữ nhật nhỏ
+    ctx.fillStyle = "#0acb63";
+    ctx.fillRect(player.x+4, player.y+player.h-6, 10, 4 + t);
+    ctx.fillRect(player.x+player.w-14, player.y+player.h-6, 10, 4 - t);
 
+    // Mắt
+    ctx.fillStyle = "#00140a";
+    ctx.fillRect(player.x+player.w-11, player.y+8, 6, 6);
+    ctx.restore();
+  }
+
+  function drawLogoWatermark() {
+    const cx = W - 64, cy = 58, r = 26;
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(logoSpin * 0.6); // xoay nhẹ
-
-    // Glow vòng ngoài
-    ctx.beginPath();
-    ctx.arc(0, 0, r + 8, 0, Math.PI*2);
-    ctx.strokeStyle = "rgba(20,255,114,.35)";
-    ctx.lineWidth = 6;
-    ctx.stroke();
-
-    // Clip hình tròn cho logo
-    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI*2); ctx.closePath();
-    ctx.save(); ctx.clip();
-
+    ctx.rotate(logoSpin*0.25);
     if (logoReady) {
-      const s = r*2;
+      const s = 44;
+      // Vòng glow
+      ctx.beginPath(); ctx.arc(0,0,r+10,0,Math.PI*2);
+      ctx.strokeStyle = "rgba(20,255,114,.25)"; ctx.lineWidth = 6; ctx.stroke();
+      // Logo
       ctx.drawImage(logoImg, -s/2, -s/2, s, s);
     } else {
-      // nền tạm khi chưa có logo
-      ctx.fillStyle = "#0ff078";
-      ctx.fillRect(-r, -r, 2*r, 2*r);
+      // Placeholder hình tròn
+      ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
+      ctx.fillStyle = "rgba(20,255,114,.25)"; ctx.fill();
+      ctx.beginPath(); ctx.arc(0,0,r-8,0,Math.PI*2);
+      ctx.strokeStyle = "rgba(20,255,114,.5)"; ctx.lineWidth = 3; ctx.stroke();
     }
-    ctx.restore();
-
-    // Viền trong
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI*2);
-    ctx.strokeStyle = "rgba(0,0,0,.35)";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
     ctx.restore();
   }
 
   function drawRialoTitle() {
+    // Header “Rialo”
     const title = "Rialo";
     const x = 20, y = 40;
+    // Glow
     ctx.shadowColor = "#14ff72"; ctx.shadowBlur = 14;
     ctx.fillStyle = "#14ff72";
     ctx.font = "800 28px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial";
     ctx.fillText(title, x, y);
     ctx.shadowBlur = 0;
 
+    // Slogan nhỏ
     ctx.fillStyle = "#9cc9b0";
     ctx.font = "12px ui-sans-serif, system-ui";
     ctx.fillText("Runner • Avoid the green blocks", x+2, y+18);
@@ -313,26 +303,6 @@
     ctx.fillText(text, W - m.width - 80, 40);
   }
 
-  function drawLogoWatermark() {
-    if (!SHOW_WATERMARK) return;
-    const cx = W - 64, cy = 58, r = 26;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(logoSpin*0.25);
-    if (logoReady) {
-      const s = 44;
-      ctx.beginPath(); ctx.arc(0,0,r+10,0,Math.PI*2);
-      ctx.strokeStyle = "rgba(20,255,114,.25)"; ctx.lineWidth = 6; ctx.stroke();
-      ctx.drawImage(logoImg, -s/2, -s/2, s, s);
-    } else {
-      ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2);
-      ctx.fillStyle = "rgba(20,255,114,.25)"; ctx.fill();
-      ctx.beginPath(); ctx.arc(0,0,r-8,0,Math.PI*2);
-      ctx.strokeStyle = "rgba(20,255,114,.5)"; ctx.lineWidth = 3; ctx.stroke();
-    }
-    ctx.restore();
-  }
-
   function drawStartOrGameOver() {
     if (!started && running) {
       ctx.fillStyle = "#b8c6d1";
@@ -340,7 +310,11 @@
       ctx.fillText("Nhấn Space / ↑ / Chạm để bắt đầu", W/2 - 210, H/2 - 10);
     }
     if (!running) {
-      if (flash > 0) { ctx.fillStyle = "rgba(255,40,40,.25)"; ctx.fillRect(0,0,W,H); }
+      // Flash overlay
+      if (flash > 0) {
+        ctx.fillStyle = "rgba(255,40,40,.25)";
+        ctx.fillRect(0,0,W,H);
+      }
       ctx.fillStyle = "#ffffff";
       ctx.font = "800 36px ui-sans-serif, system-ui";
       ctx.fillText("GAME OVER", W/2 - 110, H/2 - 8);
@@ -350,14 +324,21 @@
     }
   }
 
-  // ====== Main Loop ======
+  // ===== Main Loop =====
   function render() {
     if (running) update();
 
+    // Clear
     ctx.clearRect(0,0,W,H);
+
+    // World
     drawGround();
+    // Obstacles
     obs.forEach(drawObstacle);
+    // Player
     drawPlayer();
+
+    // UI
     drawRialoTitle();
     drawHUD();
     drawLogoWatermark();
